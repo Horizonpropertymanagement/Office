@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Horizon — Lawn Measurement & Pricing</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f3;display:flex;flex-direction:column;height:100vh}
+header{background:#1a3c2e;color:#fff;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+header h1{font-size:15px;font-weight:600}
+header span{font-size:12px;opacity:0.6}
+.search-bar{background:#fff;border-bottom:1px solid #e5e5e2;padding:10px 16px;display:flex;gap:8px;flex-shrink:0}
+.search-bar input{flex:1;height:36px;border:1px solid #ddd;border-radius:8px;padding:0 12px;font-size:14px;outline:none}
+.search-bar input:focus{border-color:#1a3c2e}
+.search-bar button{height:36px;padding:0 16px;background:#1a3c2e;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;white-space:nowrap}
+.search-bar button:hover{background:#2d6a4f}
+.toolbar{background:#fff;border-bottom:1px solid #e5e5e2;padding:8px 16px;display:flex;gap:8px;align-items:center;flex-shrink:0;flex-wrap:wrap}
+.toolbar-group{display:flex;gap:6px;align-items:center}
+.toolbar-label{font-size:12px;color:#888;white-space:nowrap}
+.tool-btn{height:32px;padding:0 12px;border:1px solid #ddd;border-radius:6px;background:#fff;font-size:13px;cursor:pointer;transition:all 0.15s;color:#333;white-space:nowrap}
+.tool-btn:hover{background:#f5f5f3;border-color:#999}
+.tool-btn.active{background:#1a3c2e;color:#fff;border-color:#1a3c2e}
+.tool-btn.sv{background:#4285F4;color:#fff;border-color:#4285F4}
+.tool-btn.sv:hover{background:#3367d6}
+.tool-btn.danger{background:#fff;color:#cc4444;border-color:#cc4444}
+.tool-btn.danger:hover{background:#fff5f5}
+.divider{width:1px;height:24px;background:#e5e5e2;margin:0 4px}
+.main{display:flex;flex:1;overflow:hidden}
+#map{flex:1}
+.sidebar{width:300px;background:#fff;border-left:1px solid #e5e5e2;display:flex;flex-direction:column;overflow-y:auto;flex-shrink:0}
+.sidebar-section{padding:14px 16px;border-bottom:1px solid #f0f0ee}
+.sidebar-section h2{font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px}
+.sqft-display{font-size:34px;font-weight:600;color:#1a3c2e;line-height:1}
+.sqft-label{font-size:12px;color:#888;margin-top:3px}
+.tier-badge{display:inline-block;font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;margin-top:8px}
+.tier-S{background:#E1F5EE;color:#085041}
+.tier-M{background:#E6F1FB;color:#0C447C}
+.tier-L{background:#EEEDFE;color:#3C3489}
+.tier-XL{background:#FAEEDA;color:#633806}
+.tier-XXL{background:#F1EFE8;color:#444441}
+.shapes-list{display:flex;flex-direction:column;gap:6px}
+.shape-row{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:#f5f5f3;border-radius:6px;font-size:13px}
+.shape-name{color:#444;font-weight:500}
+.shape-sqft{color:#1a3c2e;font-weight:600}
+.shape-delete{background:none;border:none;color:#cc4444;cursor:pointer;font-size:16px;padding:0 2px;line-height:1}
+.shape-delete:hover{color:#aa2222}
+.total-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #e5e5e2;margin-top:4px}
+.total-label{font-size:13px;font-weight:600;color:#333}
+.total-sqft{font-size:15px;font-weight:700;color:#1a3c2e}
+.price-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #f5f5f3}
+.price-row:last-child{border-bottom:none}
+.price-name{font-size:13px;color:#444}
+.price-val{font-size:14px;font-weight:600;color:#1a3c2e}
+.price-val.manual{color:#aaa;font-weight:400;font-size:12px}
+.copy-btn{width:100%;height:36px;border:1px solid #ddd;background:#fff;border-radius:8px;font-size:13px;cursor:pointer;margin-top:8px;transition:background 0.15s}
+.copy-btn:hover{background:#f5f5f3}
+.copy-btn.copied{color:#2d7d46;border-color:#2d7d46}
+.instructions{font-size:12px;color:#888;line-height:1.7}
+.instructions strong{color:#444;font-weight:500}
+.empty-shapes{font-size:12px;color:#aaa;text-align:center;padding:8px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>Horizon Property Management — Lawn Measurement</h1>
+  <span>Internal tool</span>
+</header>
+<div class="search-bar">
+  <input type="text" id="addressInput" placeholder="Enter client address (e.g. 123 Main St, Collingwood, ON)" />
+  <button onclick="searchAddress()">Search</button>
+</div>
+<div class="toolbar">
+  <div class="toolbar-group">
+    <span class="toolbar-label">View:</span>
+    <button class="tool-btn active" id="btnSatLabels" onclick="setLayer('satLabels')">Satellite + Streets</button>
+    <button class="tool-btn" id="btnSat" onclick="setLayer('sat')">Satellite</button>
+    <button class="tool-btn" id="btnStreet" onclick="setLayer('street')">Street</button>
+  </div>
+  <div class="divider"></div>
+  <div class="toolbar-group">
+    <button class="tool-btn sv" onclick="enableSVMode()">Street View</button>
+  </div>
+  <div class="divider"></div>
+  <div class="toolbar-group">
+    <button class="tool-btn danger" onclick="clearAll()">Clear all</button>
+  </div>
+</div>
+<div class="main">
+  <div id="map"></div>
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <h2>Total area</h2>
+      <div class="sqft-display" id="sqftDisplay">—</div>
+      <div class="sqft-label">square feet (all shapes combined)</div>
+      <div id="tierBadge"></div>
+    </div>
+    <div class="sidebar-section">
+      <h2>Shapes <span id="shapeCount" style="font-weight:400;color:#aaa"></span></h2>
+      <div class="shapes-list" id="shapesList">
+        <div class="empty-shapes">Draw areas on the map to measure</div>
+      </div>
+    </div>
+    <div class="sidebar-section" id="pricesSection" style="display:none">
+      <h2>Prices</h2>
+      <div id="priceList"></div>
+      <button class="copy-btn" id="copyAllBtn" onclick="copyAll()">Copy all prices</button>
+    </div>
+    <div class="sidebar-section">
+      <div class="instructions">
+        <strong>How to use:</strong><br>
+        1. Search the client's address<br>
+        2. Draw each grass area separately (front yard, back yard, side yard)<br>
+        3. The total sqft updates automatically<br>
+        4. Delete individual shapes with ×<br><br>
+        <strong>Street View:</strong> Click the blue button then click the map.<br><br>
+        <strong>Tip:</strong> Exclude house, driveway, and patios.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+<script>
+const MATRIX = [
+  {tier:'S',  label:'up to 1,999 sqft',  max:2000,    mow:152, deth:null, aer:null, seed:null},
+  {tier:'S',  label:'2,000–3,999 sqft',  max:4000,    mow:168, deth:null, aer:null, seed:null},
+  {tier:'S',  label:'4,000–4,999 sqft',  max:5000,    mow:200, deth:null, aer:null, seed:null},
+  {tier:'M',  label:'5,000–9,999 sqft',  max:10000,   mow:208, deth:280,  aer:168,  seed:224},
+  {tier:'L',  label:'10,000–14,999 sqft',max:15000,   mow:284, deth:330,  aer:198,  seed:264},
+  {tier:'XL', label:'15,000–19,999 sqft',max:20000,   mow:320, deth:400,  aer:240,  seed:320},
+  {tier:'XXL',label:'20,000+ sqft',      max:Infinity,mow:null,deth:null, aer:null,  seed:null},
+];
+
+const layers = {
+  satLabels: L.layerGroup([
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20}),
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:20})
+  ]),
+  sat: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20}),
+  street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19})
+};
+
+const map = L.map('map',{zoomControl:true}).setView([44.5,-80.2],13);
+let currentLayer = 'satLabels';
+layers.satLabels.addTo(map);
+
+const COLORS = ['#2D9B6A','#4285F4','#E67E22','#9B59B6','#E74C3C','#1ABC9C','#F39C12','#3498DB'];
+let shapeCounter = 0;
+let shapes = [];
+let searchMarker = null;
+let svMode = false;
+
+const drawnItems = new L.FeatureGroup().addTo(map);
+
+const drawControl = new L.Control.Draw({
+  draw:{
+    polygon:{
+      shapeOptions:{color: COLORS[0], fillColor: COLORS[0], fillOpacity:0.25, weight:2},
+      allowIntersection: false
+    },
+    polyline:false, rectangle:false, circle:false, marker:false, circlemarker:false
+  },
+  edit:{featureGroup: drawnItems, remove: false}
+}).addTo(map);
+
+function setLayer(name) {
+  if(currentLayer===name) return;
+  map.removeLayer(layers[currentLayer]);
+  layers[name].addTo(map);
+  currentLayer = name;
+  document.querySelectorAll('.tool-btn:not(.sv):not(.danger)').forEach(b=>b.classList.remove('active'));
+  const ids = {satLabels:'btnSatLabels', sat:'btnSat', street:'btnStreet'};
+  document.getElementById(ids[name]).classList.add('active');
+}
+
+function enableSVMode() {
+  svMode = true;
+  map.getContainer().style.cursor = 'crosshair';
+  const btn = document.querySelector('.tool-btn.sv');
+  btn.textContent = 'Click on map...';
+}
+
+map.on('click', function(e) {
+  if(!svMode) return;
+  const {lat,lng} = e.latlng;
+  window.open(`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`,'_blank');
+  svMode = false;
+  map.getContainer().style.cursor = '';
+  document.querySelector('.tool-btn.sv').textContent = 'Street View';
+});
+
+map.on(L.Draw.Event.CREATED, function(e) {
+  const layer = e.layer;
+  shapeCounter++;
+  const color = COLORS[(shapeCounter-1) % COLORS.length];
+  layer.setStyle({color, fillColor: color, fillOpacity:0.25, weight:2});
+
+  const coords = layer.getLatLngs()[0].map(p=>[p.lng,p.lat]);
+  coords.push(coords[0]);
+  const sqft = Math.round(turf.area(turf.polygon([coords])) * 10.7639);
+  const id = shapeCounter;
+  layer._shapeId = id;
+
+  drawnItems.addLayer(layer);
+  shapes.push({id, layer, sqft, name: `Area ${id}`, color});
+  updateUI();
+});
+
+function deleteShape(id) {
+  const idx = shapes.findIndex(s=>s.id===id);
+  if(idx===-1) return;
+  drawnItems.removeLayer(shapes[idx].layer);
+  shapes.splice(idx,1);
+  updateUI();
+}
+
+function clearAll() {
+  drawnItems.clearLayers();
+  shapes = [];
+  shapeCounter = 0;
+  updateUI();
+}
+
+function updateUI() {
+  const totalSqft = shapes.reduce((sum,s)=>sum+s.sqft,0);
+  const countEl = document.getElementById('shapeCount');
+  const listEl = document.getElementById('shapesList');
+  const sqftEl = document.getElementById('sqftDisplay');
+  const badgeEl = document.getElementById('tierBadge');
+  const pricesSection = document.getElementById('pricesSection');
+
+  countEl.textContent = shapes.length ? `(${shapes.length})` : '';
+
+  if(shapes.length === 0) {
+    listEl.innerHTML = '<div class="empty-shapes">Draw areas on the map to measure</div>';
+    sqftEl.textContent = '—';
+    badgeEl.innerHTML = '';
+    pricesSection.style.display = 'none';
+    return;
+  }
+
+  listEl.innerHTML = shapes.map(s=>`
+    <div class="shape-row">
+      <span style="display:flex;align-items:center;gap:6px">
+        <span style="width:10px;height:10px;border-radius:50%;background:${s.color};flex-shrink:0"></span>
+        <span class="shape-name">${s.name}</span>
+      </span>
+      <span style="display:flex;align-items:center;gap:8px">
+        <span class="shape-sqft">${s.sqft.toLocaleString()} sqft</span>
+        <button class="shape-delete" onclick="deleteShape(${s.id})">×</button>
+      </span>
+    </div>
+  `).join('') + (shapes.length > 1 ? `
+    <div class="total-row">
+      <span class="total-label">Total</span>
+      <span class="total-sqft">${totalSqft.toLocaleString()} sqft</span>
+    </div>` : '');
+
+  sqftEl.textContent = totalSqft.toLocaleString();
+
+  const tier = MATRIX.find(t=>totalSqft < t.max);
+  badgeEl.innerHTML = `<span class="tier-badge tier-${tier.tier}">Tier ${tier.tier} — ${tier.label}</span>`;
+
+  const services = [
+    {name:'Grass Cutting (monthly)', val:tier.mow},
+    {name:'De-Thatching', val:tier.deth},
+    {name:'Aeration', val:tier.aer},
+    {name:'Overseeding', val:tier.seed},
+  ];
+
+  pricesSection.style.display = 'block';
+  document.getElementById('priceList').innerHTML = services.map(s=>`
+    <div class="price-row">
+      <span class="price-name">${s.name}</span>
+      ${s.val ? `<span class="price-val">$${s.val}</span>` : '<span class="price-val manual">Quote manually</span>'}
+    </div>`).join('');
+
+  window._currentPrices = services;
+  window._currentSqft = totalSqft;
+  window._currentTier = tier.tier;
+}
+
+function copyAll() {
+  if(!window._currentPrices) return;
+  const lines = [`Property: ${window._currentSqft.toLocaleString()} sqft (Tier ${window._currentTier})`];
+  if(shapes.length > 1) shapes.forEach(s=>lines.push(`  ${s.name}: ${s.sqft.toLocaleString()} sqft`));
+  window._currentPrices.forEach(s=>lines.push(`${s.name}: ${s.val ? '$'+s.val : 'Quote manually'}`));
+  navigator.clipboard.writeText(lines.join('\n')).then(()=>{
+    const btn = document.getElementById('copyAllBtn');
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(()=>{btn.textContent='Copy all prices';btn.classList.remove('copied');},2000);
+  });
+}
+
+async function searchAddress() {
+  const q = document.getElementById('addressInput').value.trim();
+  if(!q) return;
+  const btn = document.querySelector('.search-bar button');
+  btn.textContent = 'Searching...';
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`);
+    const data = await res.json();
+    if(data.length){
+      const lat=+data[0].lat, lon=+data[0].lon;
+      map.setView([lat,lon],18);
+      if(searchMarker) map.removeLayer(searchMarker);
+      searchMarker = L.marker([lat,lon],{
+        icon: L.divIcon({
+          className:'',
+          html:`<div style="width:28px;height:36px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4))">
+            <svg viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg">
+              <path d="M14 0C6.27 0 0 6.27 0 14c0 10.5 14 22 14 22S28 24.5 28 14C28 6.27 21.73 0 14 0z" fill="#1a3c2e"/>
+              <circle cx="14" cy="14" r="6" fill="#fff"/>
+            </svg>
+          </div>`,
+          iconSize:[28,36],iconAnchor:[14,36]
+        })
+      }).addTo(map)
+      .bindPopup(`<strong>${data[0].display_name.split(',').slice(0,2).join(',')}</strong>`)
+      .openPopup();
+    } else {
+      alert('Address not found. Try adding the city or province.');
+    }
+  } catch(e){ alert('Search failed. Check your connection.'); }
+  btn.textContent = 'Search';
+}
+
+document.getElementById('addressInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchAddress();});
+</script>
+</body>
+</html>
